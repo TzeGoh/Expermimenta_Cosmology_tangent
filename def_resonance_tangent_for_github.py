@@ -1,6 +1,6 @@
 #####################################################################################
 #    Filename : def_resonance_tangent_for_github.py
-#    Date : Aug 26, 2015
+#    Date : Aug 28, 2015
 #    What : Main list of definitions for the main file 
 #           "Proj_Resonance_Lorentzian_GitHub_Run_Me.ipynb"
 #####################################################################################
@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 from scipy.stats import mode
-
+from scipy.optimize import leastsq
 
 
 '''This will give you a list of seperation of data points that could be minimas. You have to give it the data'''
@@ -117,19 +117,7 @@ def give_me_gamma(x,champ,xl,xr):
     gamma=(gam1 + gam2)/2
     return gamma
 
-'''Returns the difference between an ideal, and a measured y.Used for chi-square'''   
-def residuals(p,y_meas, x_ideal):  
-    err = y_meas - neg_Lorentz(x_ideal,p)        # y_meas - y_ideal
-    return err 
 
-'''This returns the Lorentzian function'''
-def neg_Lorentz(x, p):                           #returns the negative lorentzian 
-    Numerator = p[2]                             #p[0] = Considered as 'x0': centre of x  
-    Denominator = ((x - p[0])**2 + p[2])         #p[1] = (gamma*np.pi) 
-    Co_eff = 1/p[1]                              #p[2] = gamma**2 
-    Background = p[3]                            #p[3] =  Considered as 'y0': background
-    return (-1 * Co_eff * (Numerator/Denominator)) + Background
- 
 '''This code returns will return the average gradient to the right side of the curve'''   
 def right_gradient_average(x,y,center,move,away):
     dx = np. gradient(x[center + move : center + away])
@@ -164,10 +152,6 @@ def minima(x, y, move, noise, flat):                # move points before and aft
                     locmins.append([ x[center], y[center] ])
        
     return locmins  
-
-
-
-
 
 
 
@@ -305,7 +289,7 @@ def ranges(locmins):
     for i in range(len(locmins)):
         range_of_freq.append(locmins[i][2])
     for i in range(1,len(range_of_freq)):
-        if range_of_freq[i] - range_of_freq[i-1] < 20:
+        if range_of_freq[i] - range_of_freq[i-1] < 50:          ###arbitrary value
             range_of_freq[i-1] = 0
     while 0 in range_of_freq : range_of_freq.remove(0)
     return range_of_freq 
@@ -324,18 +308,18 @@ def ranges_to_look(ranges):
     list_of_ranges = []
     for i in range(len(ranges)):
         if i == 0:
-            begin = ranges[i] - ave_diff / 2
-            end = ranges[i] + (ranges[i + 1]- ranges[i]) / 2
+            begin = ranges[i] - ave_diff / 6
+            end = ranges[i] + (ranges[i + 1]- ranges[i]) / 6
             this_range = [begin, end]
             list_of_ranges.append(this_range)
         if i == len(ranges) - 1:
-            begin = ranges[i] - (ranges[i] - ranges[i - 1]) / 2
-            end = ranges[i] + ave_diff / 2
+            begin = ranges[i] - (ranges[i] - ranges[i - 1]) / 6
+            end = ranges[i] + ave_diff / 6
             this_range = [begin, end]
             list_of_ranges.append(this_range)
         elif i != 0 and i != len(ranges) -1 :
-            begin =  ranges[i] - ( ranges[i] - ranges[i - 1] )/2
-            end = ranges[i] + (ranges[i + 1]- ranges[i]) / 2
+            begin =  ranges[i] - ( ranges[i] - ranges[i - 1] )/6
+            end = ranges[i] + (ranges[i + 1]- ranges[i]) / 6
             this_range = [begin, end]
             list_of_ranges.append(this_range)
     #print list_of_ranges
@@ -440,7 +424,7 @@ def box_in_the_plot(ranges_to_look, freq_to_look, data_to_look):
 '''This shows you the main plot'''
 def main_plot_with_noise(x,y,xstart,xend,ystart,yend):
     plt.plot(x,y)
-    plt.title('Main plot with noise')
+    plt.title('Main plot with noise removed')
     plt.xlim(xstart,xend )
     plt.ylim(ystart,yend)  
     
@@ -489,37 +473,71 @@ def show_me_resonators_in_close_range(ranges_to_look,freq_to_look,data_to_look,x
         plt.ylabel('Data')
         index_list = []
         plt.figure()        
+
+'''This returns the Lorentzian function'''
+def neg_Lorentz(x, p):                            
+    Numerator = p[2]                             #p[0] = Considered as 'x0': centre of x  
+    Denominator = ((x - p[0])**2 + p[2])         #p[1] = (gamma*np.pi) 
+    Co_eff = 1/p[1]                              #p[2] = gamma**2 
+    Background = p[3]                            #p[3] =  Considered as 'y0': background
+    return (-1 * Co_eff * (Numerator/Denominator)) + Background   
+    
+    
+    
+    
+    
+
+'''Returns the difference between an ideal, and a measured y.Used for chi-square'''   
+def residuals(p,y_meas, x_ideal):  
+    err = y_meas - tangent(x_ideal,p)        # y_meas - y_ideal
+    return err 
+
         
-        
+'''This returns the tangent function'''
+def tangent(x, p):                                
+    b = 1/p[0]                                    # x0 = center of x
+    c = p[2]                                      #p[2] = c =phase shift
+    x0 = b*x + c                                  #p[0] = where pi/2 spreads out to
+    tang = np.tan(x0)                               
+    co_eff = 2*p[1]                               #p[1] = (gamma*np.pi) = FWHM
+    background = p[3]                             #p[3] =  Considered as 'y0': background
+    return ( 0.1 *co_eff* tang - background) 
         
 '''This fits for you the lorentzian, and will tell you which points have chi-squared more 
 than 1, and which ones have more than 100 '''
-def fit_me_to_lorentzian(champ,x,y,move,noise,tol,flat,count_chi,count_chi_less_than_1):
+def fit_me_to_tangent(champ,x,y,move,noise,tol,tol2,flat,count_chi,count_chi_less_than_1):
             
-    hl,hr =  give_me_2_maximas(champ,y,move,noise,tol)# hl, hr : height to left, right              
-    fwfm = abs (x[champ + hr] - x[champ - hl])        # fwfm   : full width full max
-    h_fwfm = abs (y[champ + hr] - y[champ])           # h_fwfm : height fwfm    
-    h_fwhm = (abs(y[champ]) - 0.5 * h_fwfm) * -1      # fwhm   : full width half max             
-    xl, xr = give_me_2_half_maxes(champ,y,h_fwhm)     # h_fwhm : height fwhm        
-    gamma = give_me_gamma(x,champ,xl,xr)              # xl,xr : half max to left,right        
-                                                                  
+    hl,hr =  give_me_2_maximas(champ,y,move,noise,tol)# hl, hr : height to left, right  
+    h_ave = int((hl + hr )/2)
+    hl = h_ave + tol*noise
+    hr = h_ave + tol2*noise 
+    gamma = ( abs(y[champ] - y[champ-hl]) + abs(y[champ +1 ] - y[champ + 1 + hr]) )/ 4 
+                                                      # kinda full_width_half_max  
+    x_val_right = x[champ + hl]
+    x_val_left = x[champ - hl]
+    x_sep_right = x[champ + hl] - x[champ]
+    x_sep_left = x[champ] - x[champ - hl]
+    x_sep_ave = (x_sep_right + x_sep_left) / 2
+    #print hl, hr, x_sep_left, x_sep_right, x_sep_ave, " hl, hr, x_sep_left, x_sep_right, x_sep_ave"
+    
+    
     p=[0.0, 0.0, 0.0, 0.0]                            
-    p[0] = x[champ]                                             
-    p[1] = (gamma * np.pi)
-    p[2] = gamma**2
+    p[0] = (2/np.pi) * x_sep_ave                                             
+    p[1] = gamma
+    p[2] = np.pi/2
     p[3] = y[champ + hr]
         #print j+1,p, "The original parameters"  
     
     x_ideal = np.linspace(x[champ - hl], x[champ + hr], hl+hr)# x_fit = x_ideal = x_meas
-    y_ideal = neg_Lorentz(x_ideal,p)
+    y_ideal = -1*tangent(x_ideal,p)
     y_meas = y[champ - hl : champ + hr]
     x_meas = x_ideal                                      
     
     from scipy.optimize import leastsq
     plsq = leastsq(residuals, p, args=(y_meas,x_meas))      
         #print j+1,(plsq[0]), "The parameters for leastsq"   
-    x_fit = x_ideal                                                 
-    y_fit = neg_Lorentz(x_ideal,plsq[0])
+    x_fit = x_ideal 
+    y_fit = tangent(x_ideal,plsq[0])
         
     chi_squared=0
     for item in range(len(y_meas)):
@@ -533,8 +551,8 @@ def fit_me_to_lorentzian(champ,x,y,move,noise,tol,flat,count_chi,count_chi_less_
     return chi_squared, count_chi, count_chi_less_than_1, hl, hr, champ, x_ideal, y_ideal, x_fit, y_fit
         
 '''This should show you all the resonators in close range fitted to the lorentzian function'''
-def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_look,data_to_look,x,y,\
-                                                      move,noise,tol,flat,order_of_mins,locmins):
+def show_me_resonators_in_close_range_with_tangent(ranges_to_look,freq_to_look,data_to_look,x,y,\
+                                                      move,noise,tol,tol2,flat,order_of_mins,locmins):
     index = 0
     index_list=[]
     count_chi=0
@@ -547,8 +565,8 @@ def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_loo
         = give_me_all_limits(ranges_to_look, freq_to_look, data_to_look,j) 
         plt.plot(x,y)
         plt.scatter(x,y, alpha = 0.4, label = "Measured")
-        plt.xlim (xbegin, xend)
-        plt.ylim (ybegin, yend)
+        plt.xlim (xbegin, xend)                                                    ## Put it normal
+        plt.ylim (ybegin, yend)                                                    # at the end
         freq_points = []
         ax = plt.gca()
         for i in range(len(order_of_mins)):
@@ -557,7 +575,7 @@ def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_loo
             freq_points, index, index_list = count_no_of_data_points_per_close_range\
             (order_of_mins,x,ranges_begin,ranges_end,freq_points,index,index_list,i)        
             
-        '''This plots the lorentzian per minima'''
+        '''This plots the tangent per minima'''
         for i in range(len(freq_points)):    
             freq_points_total.append(freq_points[i])
         locmins_list=[]
@@ -567,7 +585,8 @@ def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_loo
         for j in range(len(locmins_list)):
             champ = locmins_list[j][2]
             chi_squared, count_chi, count_chi_less_than_1, hl, hr, champ, x_ideal, y_ideal, x_fit, y_fit \
-            = fit_me_to_lorentzian(champ,x,y,move,noise,tol,flat,count_chi,count_chi_less_than_1) 
+            = fit_me_to_tangent(champ,x,y,move,noise,tol,tol2,flat,count_chi,count_chi_less_than_1) 
+            
             chi_squared_list.append(chi_squared)
             chi_squared_total.append(chi_squared)
             
@@ -577,8 +596,8 @@ def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_loo
             plt.scatter(x[champ - hl], y[champ - hl], color = 'orange', s=180 , alpha = 0.8 )
             plt.scatter(x[champ + hr], y[champ + hr], color = 'orange', s=180 , alpha = 0.8)
             plt.plot(x_ideal, y_ideal, color = 'orange', linewidth = 4, linestyle = '--',alpha = 0.8) 
-            plt.plot(x_fit, y_fit, color = 'green', linewidth = 4 , alpha = 0.5 )
-            plt.scatter(x_fit, y_fit, color = 'green', alpha = 0.5 ) 
+            plt.plot(x_fit, y_fit, color = 'green', linewidth = 4 , alpha = 0.3 )
+            plt.scatter(x_fit, y_fit, color = 'green', alpha = 0.3 ) 
         #print chi_squared_list
                
 #########################################################################################################              
@@ -587,8 +606,8 @@ def show_me_resonators_in_close_range_with_lorentzian(ranges_to_look,freq_to_loo
             plt.scatter(x[champ - hl], y[champ - hl], color = 'orange', s=180 , alpha = 0.8, label = "Maxima" )    
             plt.scatter (locmins[j][0], locmins[j][1], color = 'red', label = "Minima")    
             plt.plot(x_ideal, y_ideal, color = 'orange', linewidth = 4, linestyle = '--', alpha = 0.8 , label = " Ideal" )
-            plt.plot(x_fit, y_fit, color = 'green', linewidth = 4 , alpha = 0.5 , label = "Fit" )
-            plt.legend(loc=3)
+            plt.plot(x_fit, y_fit, color = 'green', linewidth = 4 , alpha = 0.3 , label = "Fit" )
+            plt.legend(loc = 4)
             
         freq_points_dec = give_me_two_decimal(freq_points) 
         chi_squared_dec = give_me_two_decimal(chi_squared_list) 
